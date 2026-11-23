@@ -1,0 +1,367 @@
+:root {
+  --bg-dark: #0b1120;
+  --panel-bg: rgba(15, 23, 42, 0.92);
+  --border-color: rgba(148, 163, 184, 0.2);
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-secondary: #d946ef;
+  --success: #22c55e;
+  --warning: #eab308;
+  --danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Üst HUD */
+.hud-header {
+  height: 64px;
+  padding: 0 24px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 1000;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-icon {
+  font-size: 1.35rem;
+}
+
+.brand h1 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.45rem;
+  letter-spacing: -0.5px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hud-stats {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.8px;
+}
+
+.stat-value {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.badge-easy { color: var(--success); }
+.badge-medium { color: var(--warning); }
+.badge-hard { color: var(--danger); }
+
+/* Zamanlayıcı Çubuğu */
+.timer-container {
+  position: relative;
+  height: 26px;
+  background: #1e293b;
+  border-bottom: 1px solid var(--border-color);
+  z-index: 1000;
+}
+
+.timer-bar {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--success), var(--accent), var(--accent-secondary));
+  transition: width 0.1s linear, background-color 0.3s ease;
+}
+
+.timer-meta {
+  position: absolute;
+  inset: 0;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* Harita Alanı */
+.map-wrapper {
+  position: relative;
+  flex: 1;
+  width: 100%;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  background: #070d19;
+}
+
+.country-tooltip {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel-bg);
+  border: 1px solid var(--accent);
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  z-index: 999;
+  pointer-events: none;
+}
+
+.hint-panel {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  background: var(--panel-bg);
+  border: 1px solid var(--warning);
+  border-radius: 12px;
+  padding: 12px 16px;
+  max-width: 320px;
+  z-index: 999;
+  backdrop-filter: blur(8px);
+}
+
+.hint-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--warning);
+  margin-bottom: 4px;
+}
+
+.hint-panel p {
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.feedback-toast {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 320px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 18px;
+  z-index: 1000;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.feedback-toast h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  margin-bottom: 6px;
+}
+
+.feedback-toast p {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  line-height: 1.45;
+}
+
+/* Alt Ses Paneli */
+.audio-dock {
+  height: 76px;
+  padding: 0 24px;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  z-index: 1000;
+}
+
+.btn-control {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  color: #0f172a;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.2s ease;
+}
+
+.btn-control:hover {
+  filter: brightness(1.15);
+  transform: scale(1.05);
+}
+
+.track-status {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+}
+
+.status-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.status-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.visualizer-box {
+  flex: 1;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* Butonlar & Modallar */
+.btn-primary {
+  background: var(--accent);
+  color: #0f172a;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.btn-primary:hover {
+  background: #7dd3fc;
+}
+
+.btn-large {
+  width: 100%;
+  padding: 12px;
+  font-size: 1rem;
+  margin-top: 14px;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(6px);
+}
+
+.modal-card {
+  background: #1e293b;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 28px;
+  max-width: 480px;
+  width: 92%;
+}
+
+.modal-wide {
+  max-width: 640px;
+}
+
+.modal-card h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  margin-bottom: 12px;
+}
+
+.modal-card p {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.rules-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.88rem;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 14px;
+  border-radius: 10px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.summary-item {
+  background: rgba(15, 23, 42, 0.7);
+  padding: 12px;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.summary-item span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.summary-item strong {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.2rem;
+  color: var(--accent);
+}
+
+.chart-container {
+  height: 220px;
+  margin: 12px 0;
+}
+
+/* Leaflet Jeodezik Mesafe Etiketi */
+.distance-label {
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #38bdf8;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
