@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GeoDisco | Küresel Müzik & Mekânsal Keşif Oyunu</title>
+  <title>GeoDisco</title>
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,117 +18,121 @@
 </head>
 <body>
 
-  <!-- Üst Bilgi Paneli (HUD) -->
+  <!-- Top HUD -->
   <header class="hud-header">
     <div class="brand">
-      <span class="brand-icon">🪩🌍</span>
+      <span class="brand-icon">🪩</span>
       <h1>GeoDisco</h1>
     </div>
 
     <div class="hud-stats">
       <div class="stat-box">
-        <span class="stat-label">TUR</span>
+        <span class="stat-label">ROUND</span>
         <span class="stat-value" id="round-display">1 / 10</span>
       </div>
       <div class="stat-box">
-        <span class="stat-label">ZORLUK</span>
-        <span class="stat-value badge-easy" id="difficulty-display">KOLAY</span>
+        <span class="stat-label">DIFFICULTY</span>
+        <span class="stat-value badge-easy" id="difficulty-display">EASY</span>
       </div>
       <div class="stat-box">
-        <span class="stat-label">PUAN</span>
+        <span class="stat-label">SCORE</span>
         <span class="stat-value" id="score-display">0</span>
       </div>
       <div class="stat-box">
-        <span class="stat-label">REKOR</span>
+        <span class="stat-label">BEST</span>
         <span class="stat-value" id="highscore-display">0</span>
       </div>
       <div class="stat-box lives-box">
-        <span class="stat-label">CAN</span>
+        <span class="stat-label">LIVES</span>
         <div class="lives-icons" id="lives-display">❤️❤️❤️</div>
       </div>
+      <button id="hud-restart-btn" class="btn-restart-hud" title="Restart Game from Round 1" aria-label="Restart Game">
+        ↻
+      </button>
     </div>
   </header>
 
-  <!-- Zaman İlerleme Çubuğu -->
+  <!-- Countdown Timer Bar -->
   <div class="timer-container">
     <div class="timer-bar" id="timer-bar"></div>
     <div class="timer-meta">
-      <span id="timer-text">25.0 sn</span>
-      <span id="multiplier-text">Hız Çarpanı: 2.0x</span>
+      <span id="timer-text">25.0 s</span>
+      <span id="multiplier-text">Speed Multiplier: 2.0x</span>
     </div>
   </div>
 
-  <!-- Ana Harita Alanı -->
+  <!-- Main Map Area -->
   <main class="map-wrapper">
     <div id="map"></div>
 
-    <!-- Ülke Hover Etiketi -->
-    <div class="country-tooltip hidden" id="country-tooltip">Ülke Seçin</div>
+    <!-- Country Hover Tooltip -->
+    <div class="country-tooltip hidden" id="country-tooltip">Select a Country</div>
 
-    <!-- Zamanla Açılan İpucu Kutusu -->
+    <!-- Progressive Hint Box -->
     <div class="hint-panel hidden" id="hint-panel">
-      <span class="hint-badge">💡 İPUCU</span>
-      <p id="hint-text">Dinlemeye odaklan...</p>
+      <span class="hint-badge">💡 HINT</span>
+      <p id="hint-text">Listen closely...</p>
     </div>
 
-    <!-- Tur Sonucu Bildirim Kartı -->
+    <!-- Round Feedback Toast -->
     <div class="feedback-toast hidden" id="feedback-toast">
-      <h3 id="feedback-title">Doğru Tahmin!</h3>
-      <p id="feedback-details">Şarkı detayları...</p>
-      <button id="next-round-btn" class="btn-primary">Sonraki Tur ➔</button>
+      <h3 id="feedback-title">Correct Guess!</h3>
+      <p id="feedback-details">Track details...</p>
+      <button id="next-round-btn" class="btn-primary">Next Round ➔</button>
     </div>
   </main>
 
-  <!-- Alt Ses Kontrol ve D3.js Spektrum Paneli -->
+  <!-- Bottom Audio Control & D3.js Spectrum Dock -->
   <footer class="audio-dock">
-    <button id="play-pause-btn" class="btn-control" title="Oynat / Duraklat (Space)">
+    <button id="play-pause-btn" class="btn-control" title="Play / Pause (Space)">
       <span id="play-icon">▶</span>
     </button>
 
     <div class="track-status">
-      <span class="status-title" id="track-status-text">Şarkı yükleniyor...</span>
-      <span class="status-sub">Kısayol: <strong>Boşluk (Space)</strong> ile duraklat/oynat</span>
+      <span class="status-title" id="track-status-text">Ready to play...</span>
+      <span class="status-sub">Shortcut: Press <strong>Space</strong> to play/pause</span>
     </div>
 
-    <!-- D3.js Canlı Ses Spektrumu Konteyneri -->
+    <!-- D3.js Live Audio Spectrum Container -->
     <div id="d3-visualizer" class="visualizer-box"></div>
+
+    <div class="copyright-badge">© 2026 Doruk ÖCAL</div>
 
     <audio id="audio-player" preload="none"></audio>
   </footer>
 
-  <!-- Başlangıç Modalı -->
+  <!-- Start Modal -->
   <div class="modal-overlay" id="start-modal">
     <div class="modal-card">
-      <h2>🪩 GeoDisco'ya Hoş Geldin</h2>
-      <p>
-        Dünyanın dört bir yanından farklı dönemlere ait şarkıları dinle ve <strong>25 saniye</strong> içinde
-        hangi ülkeye ait olduğunu haritada işaretle.
+      <h2>🪩 Welcome to GeoDisco</h2>
+      <p id="modal-intro-text">
+        Listen to tracks from around the world across different eras and click their country of origin on the map within <strong>25 seconds</strong>.
       </p>
       <ul class="rules-list">
-        <li>🎯 <strong>10 Tur & 3 Can:</strong> Kolaydan zora ilerleyen küresel müzik yolculuğu.</li>
-        <li>⚡ <strong>Hız Bonusu:</strong> İlk 5 saniyede bulursan <strong>2.0x</strong> puan kazanırsın.</li>
-        <li>🧭 <strong>Mekânsal Tolerans:</strong> Hedef ülkeye <strong>1.500 km</strong>'den yakın tahmin yaparsan can kaybetmez, yakınlık puanı alırsın.</li>
+        <li>🎯 <strong>10 Rounds & 3 Lives:</strong> A global musical journey progressing from easy to hard.</li>
+        <li>⚡ <strong>Speed Bonus:</strong> Guess within the first 5 seconds to earn a <strong>2.0x</strong> score multiplier.</li>
+        <li>🧭 <strong>Spatial Tolerance:</strong> Guess within <strong>1,700 km</strong> of the target country to keep your life and earn proximity points.</li>
       </ul>
-      <button id="start-game-btn" class="btn-primary btn-large">Oyuna Başla</button>
+      <button id="start-game-btn" class="btn-primary btn-large">Loading Map...</button>
     </div>
   </div>
 
-  <!-- Oyun Sonu Analiz Modalı (Chart.js) -->
+  <!-- Game Over Analytics Modal (Chart.js) -->
   <div class="modal-overlay hidden" id="gameover-modal">
     <div class="modal-card modal-wide">
-      <h2 id="gameover-title">Oyun Tamamlandı!</h2>
+      <h2 id="gameover-title">Game Over!</h2>
       <div class="summary-grid">
         <div class="summary-item">
-          <span>Toplam Skor</span>
+          <span>Total Score</span>
           <strong id="final-score">0</strong>
         </div>
         <div class="summary-item">
-          <span>Ort. Tepki Süresi</span>
-          <strong id="final-avg-time">0.0 sn</strong>
+          <span>Avg. Response Time</span>
+          <strong id="final-avg-time">0.0 s</strong>
         </div>
         <div class="summary-item">
-          <span>İsabet Oranı</span>
-          <strong id="final-accuracy">%0</strong>
+          <span>Accuracy</span>
+          <strong id="final-accuracy">0%</strong>
         </div>
       </div>
 
@@ -136,16 +140,26 @@
         <canvas id="performance-chart"></canvas>
       </div>
 
-      <button id="restart-game-btn" class="btn-primary btn-large">Tekrar Oyna</button>
+      <button id="restart-game-btn" class="btn-primary btn-large">Play Again</button>
     </div>
   </div>
 
-  <!-- Kütüphaneler: Leaflet, D3.js, Chart.js -->
+  <!-- Libraries: Leaflet, D3.js, Chart.js -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <!-- Uygulama Modülleri -->
+  <!-- Warn if opened directly via file:// instead of local HTTP server -->
+  <script>
+    if (window.location.protocol === 'file:') {
+      const btn = document.getElementById('start-game-btn');
+      const intro = document.getElementById('modal-intro-text');
+      btn.textContent = 'Local Server Required';
+      intro.innerHTML = '<strong style="color:#ef4444;">Please open this project using VS Code Live Server or <code>python -m http.server 8000</code></strong> (browsers block ES modules on <code>file://</code>).';
+    }
+  </script>
+
+  <!-- Application Modules -->
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
