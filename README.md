@@ -1,9 +1,9 @@
 # 🪩 GeoDisco — Global Music & Spatial Discovery GeoGame
 
 **Course:** GMT 458 – Web GIS (Assignment 2: GeoGame)  
-**Author:** Doruk ÖCAL  
-**Live Application (GitHub Pages):** `https://dorukocal13.github.io/GeoDisco/`  
-**Repository:** `https://github.com/dorukocal13/GeoDisco`
+**Author:** <a href="https://github.com/dorukocal13">Doruk ÖCAL</a>  
+**Live Application (GitHub Pages):** <a href="https://dorukocal13.github.io/GeoDisco/">https://dorukocal13.github.io/GeoDisco/</a>  
+**Repository:** <a href="https://github.com/dorukocal13/GeoDisco">https://github.com/dorukocal13/GeoDisco</a>
 
 ---
 
@@ -55,7 +55,7 @@ The user interface is structured into four distinct functional zones: a top Head
 
 ### Difficulty Progression
 The 36-country dataset (`data/countries_pool.json`) is stratified into three difficulty tiers that scale both geographic obscurity and MusicBrainz artist search depth as rounds advance:
-* **Rounds 1–3 (`Easy`):** Major global music hubs and distinctive musical traditions (e.g., *Türkiye, Brazil, India, Japan, United Kingdom, United States, Spain, Italy*). Queries the top **100** community-tagged artists per country.
+* **Rounds 1–3 (`Easy`):** Major global music hubs and highly distinctive musical traditions (e.g., *Türkiye, Brazil, India, Japan, United Kingdom, United States, Spain, Italy*). Queries the top **100** community-tagged artists per country.
 * **Rounds 4–7 (`Medium`):** Regional genres requiring sharper geographic differentiation (e.g., *Argentina, Greece, Nigeria, Jamaica, Ireland, Egypt, Colombia, Portugal*). Expands search depth to the top **300** tagged artists.
 * **Rounds 8–10 (`Hard`):** Specialized local styles, micro-regions, and traditional instrumentation (e.g., *Mali, Mongolia, Georgia, Iceland, Senegal, Ethiopia, Azerbaijan, Peru*). Expands search depth to the top **500** tagged artists (automatically falling back to the top 100 for smaller nations with fewer indexed pages).
 
@@ -89,14 +89,14 @@ Time directly governs both scoring potential and spatial assistance during every
 ## 5. JavaScript Libraries & Open Datasets
 
 ### JavaScript Libraries
-* **Leaflet.js (`v1.9.4`):** Renders the single-piece vector world map without external tile dependencies, mainland-anchored zoom-adaptive country name labels, hover/hint continent styles, geodesic feedback polylines, and distance tooltips.
-* **D3.js (`v7`):** Drives the SVG-based 36-bar live frequency spectrum visualizer in the bottom audio dock using `requestAnimationFrame` harmonic wave interpolation.
-* **Chart.js (`v4.4.1`):** Renders a dual-axis bar and line chart in the post-game summary modal, visualizing points earned per round (color-coded by accuracy) alongside response time in seconds.
+* **<a href="https://leafletjs.com/">Leaflet.js (`v1.9.4`)</a>:** Renders the single-piece vector world map without external tile dependencies, mainland-anchored zoom-adaptive country name labels, hover/hint continent styles, geodesic feedback polylines, and distance tooltips.
+* **<a href="https://d3js.org/">D3.js (`v7`)</a>:** Drives the SVG-based 36-bar live frequency spectrum visualizer in the bottom audio dock using `requestAnimationFrame` harmonic wave interpolation.
+* **<a href="https://www.chartjs.org/">Chart.js (`v4.4.1`)</a>:** Renders a dual-axis bar and line chart in the post-game summary modal, visualizing points earned per round (color-coded by accuracy) alongside response time in seconds.
 
 ### Openly Available Datasets
-* **Natural Earth (`ne_110m_admin_0_countries.geojson`):** Public-domain vector boundary dataset loaded via multi-source fallback (local `./data/countries.geojson`, jsDelivr CDN, and GitHub Raw) providing country polygons, `ISO_A3` codes, and `CONTINENT` classifications.
-* **MusicBrainz Open Web Service (`WS/2`):** Open-source music encyclopedia API queried by ISO-3166 country codes (`country:TR AND tag:*`) with `1.1s` rate-limit compliance, minimum confidence filtering (`score >= 90`), nationality disambiguation validation, and difficulty-scaled `offset` parameters.
-* **iTunes Search API:** Public media endpoint used to retrieve 30-second HTTPS audio previews (`previewUrl`), release dates (`releaseDate`), and primary genres (`primaryGenreName`), backed by a curated, single-country-of-origin multi-era fallback roster.
+* **<a href="https://www.naturalearthdata.com/">Natural Earth (`ne_110m_admin_0_countries.geojson`)</a>:** Public-domain vector boundary dataset loaded via multi-source fallback (local `./data/countries.geojson`, jsDelivr CDN, and GitHub Raw) providing country polygons, `ISO_A3` codes, and `CONTINENT` classifications.
+* **<a href="https://musicbrainz.org/doc/MusicBrainz_API">MusicBrainz Open Web Service (`WS/2`)</a>:** Open-source music encyclopedia API queried by ISO-3166 country codes (`country:TR AND tag:*`) with `1.1s` rate-limit compliance, minimum confidence filtering (`score >= 90`), nationality disambiguation validation, and difficulty-scaled `offset` parameters.
+* **<a href="https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/">iTunes Search API</a>:** Public media endpoint used to retrieve 30-second HTTPS audio previews (`previewUrl`), release dates (`releaseDate`), and primary genres (`primaryGenreName`), backed by a curated, single-country-of-origin multi-era fallback roster.
 
 ---
 
@@ -149,7 +149,7 @@ During the development of **GeoDisco**, **Google Gemini** was utilized as a coll
 * **State Encapsulation & Modular ES6:** Strengthened understanding of **JavaScript closures** and session ID guards (`roundSessionId`) for protecting game state integrity across asynchronous network calls and modular ES6 files (`MapManager`, `AudioVisualizer`, `createGameEngine`).
 * **Multi-Library Integration:** Combined **Leaflet.js**, **D3.js**, and **Chart.js** cohesively within a single responsive WebGIS interface.
 
-* **AI Conversation URL:** `https://share.gemini.google/KUJPBrCIm4AS`
+* **AI Conversation URL:** <a href="https://share.gemini.google/KUJPBrCIm4AS">https://share.gemini.google/KUJPBrCIm4AS</a>
 
 ---
 
