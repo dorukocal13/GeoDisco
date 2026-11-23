@@ -21,29 +21,11 @@
 
 ---
 
-## 2. Proposed Frontend Layout
+## 2. Frontend Layout & Application Interface
 
 The user interface is structured into four distinct functional zones: a top Heads-Up Display (HUD), a full-width countdown progress bar, a central full-bleed Leaflet vector map canvas with floating overlays, and a bottom audio control dock.
 
-    +------------------------------------------------------------------------------------+
-    |  [🪩 GeoDisco]   ROUND: 3/10  DIFFICULTY: MEDIUM  SCORE: 2,450  BEST: 4,100  ❤️❤️🖤 [↻] | <-- Top HUD
-    +------------------------------------------------------------------------------------+
-    |  [==================>-------------------------]  16.4 s   (Speed Multiplier: 1.8x) | <-- Timer Bar
-    +------------------------------------------------------------------------------------+
-    |                                                                                    |
-    |  [+]  . _..::__:  ,-"-"._        _..---..._          _.-"-.                        |
-    |  [-] _.'  United  _.-'   '-.    .'  Russia  '.      .'      '.                     |
-    |  [🌍](    States /  [Guessed]  /   [Target]   \    /  China   \                    |
-    |       '-.       \  Country   ---- 840 km ----/   |            |                    |
-    |                  '._      _.'  Geodesic Line      '.        .'                     |
-    |                     '-..-'                          '-....-'                       |
-    |                                                                                    |
-    |   +------------------------------------------+                                     |
-    |   | 💡 HINT (15.0 s): Genre & Release Year   |  <-- Progressive Timed Hint Box     |
-    |   +------------------------------------------+                                     |
-    +------------------------------------------------------------------------------------+
-    | [ ▶ / ❚❚ (Space) ] | Track Status | ▂ ▅ █ ▇ ▃ ▅ █ ▆ ▂ ▄ ▇ █ ▅ (D3.js) | © 2026 Doruk ÖCAL |
-    +------------------------------------------------------------------------------------+
+![GeoDisco Gameplay Screenshot](./docs/geodiscogameplay.png)
 
 ---
 
@@ -137,6 +119,8 @@ The application continuously updates the Document Object Model in response to ga
     ├── data/
     │   ├── countries.geojson      # Local Natural Earth 110m vector boundaries fallback
     │   └── countries_pool.json    # 36-country difficulty pool with coordinates & ISO codes
+    ├── docs/
+    │   └── screenshot.png         # Gameplay interface screenshot
     └── README.md                  # Project design and technical documentation
 
 ---
@@ -149,7 +133,7 @@ During the development of **GeoDisco**, **Google Gemini** was utilized as a coll
 * **State Encapsulation & Modular ES6:** Strengthened understanding of **JavaScript closures** and session ID guards (`roundSessionId`) for protecting game state integrity across asynchronous network calls and modular ES6 files (`MapManager`, `AudioVisualizer`, `createGameEngine`).
 * **Multi-Library Integration:** Combined **Leaflet.js**, **D3.js**, and **Chart.js** cohesively within a single responsive WebGIS interface.
 
-* **AI Conversation URL:** <a href="https://share.gemini.google/KUJPBrCIm4AS">https://share.gemini.google/KUJPBrCIm4AS</a>
+* **AI Conversation URL:** <a href="https://share.gemini.google/Lx6w7KrCldUC">https://share.gemini.google/Lx6w7KrCldUC</a>
 
 ---
 
