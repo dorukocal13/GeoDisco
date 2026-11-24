@@ -3,10 +3,14 @@ import { getRandomTrackForCountry } from './apiService.js';
 import { createGameEngine } from './gameEngine.js';
 import { AudioVisualizer } from './audioVisualizer.js';
 
+const SILENT_AUDIO_URI =
+  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
 let gameEngine = null;
 let mapManager = null;
 let visualizer = null;
 let isAppReady = false;
+let isAudioUnlocked = false;
 
 let timerInterval = null;
 let remainingSeconds = 25;
@@ -57,10 +61,23 @@ function isTouchDevice() {
 }
 
 function unlockMobileAudio() {
+  if (isAudioUnlocked) return;
   try {
-    audioPlayer.load();
+    audioPlayer.src = SILENT_AUDIO_URI;
+    const playPromise = audioPlayer.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          audioPlayer.pause();
+          isAudioUnlocked = true;
+        })
+        .catch(() => {
+          // Even an aborted play() inside a user tap unlocks the element on iOS/Android
+          isAudioUnlocked = true;
+        });
+    }
   } catch {
-    // Ignore unlock errors on desktop
+    // Ignore on restricted environments
   }
 }
 
@@ -177,10 +194,8 @@ function checkProgressiveHints() {
   }
 }
 
-function clearAudioPlayer() {
+function stopAudioPlayback() {
   audioPlayer.pause();
-  audioPlayer.removeAttribute('src');
-  audioPlayer.load();
   playIcon.textContent = '▶';
   visualizer.stop();
 }
@@ -205,7 +220,7 @@ async function loadAndPlayTrackForCountry(targetCountry, activeSessionId) {
   } catch {
     if (isWaitingForAudioStart && activeSessionId === roundSessionId) {
       trackStatusText.textContent = isTouchDevice()
-        ? '▶ Tap Play to listen'
+        ? '▶ Tap Play button on bottom-left to listen'
         : '▶ Click Play or press Space to listen';
     }
   }
@@ -220,7 +235,7 @@ async function startNewRound() {
   audioRetryCount = 0;
 
   stopTimer();
-  clearAudioPlayer();
+  stopAudioPlayback();
 
   feedbackToast.classList.add('hidden');
   hintPanel.classList.add('hidden');
@@ -261,8 +276,7 @@ function handleCountrySelection(selectedCountry) {
 
   isRoundResolving = true;
   stopTimer();
-  audioPlayer.pause();
-  visualizer.stop();
+  stopAudioPlayback();
 
   const result = gameEngine.evaluateGuess({
     guessedIso: selectedCountry.iso,
@@ -279,8 +293,7 @@ function handleCountrySelection(selectedCountry) {
 function handleRoundTimeout() {
   if (isRoundResolving) return;
   isRoundResolving = true;
-  audioPlayer.pause();
-  visualizer.stop();
+  stopAudioPlayback();
 
   const result = gameEngine.handleTimeout();
   if (!result) return;
@@ -318,6 +331,7 @@ function presentRoundFeedback(result) {
   feedbackToast.classList.remove('hidden');
 
   nextRoundBtn.onclick = () => {
+    unlockMobileAudio();
     if (result.isGameOver) {
       showGameOverScreen();
     } else {
@@ -328,7 +342,7 @@ function presentRoundFeedback(result) {
 
 function showGameOverScreen() {
   feedbackToast.classList.add('hidden');
-  clearAudioPlayer();
+  stopAudioPlayback();
   const stats = gameEngine.getSummaryStats();
 
   document.getElementById('gameover-title').textContent =
@@ -342,9 +356,16 @@ function showGameOverScreen() {
 }
 
 function toggleAudioPlayback() {
-  if (!audioPlayer.src) return;
+  if (!audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
+
   if (audioPlayer.paused) {
-    audioPlayer.play().catch(() => {});
+    if (audioPlayer.error || audioPlayer.readyState === 0) {
+      audioPlayer.load();
+    }
+    audioPlayer.play().catch((err) => {
+      console.warn('Manual playback failed:', err);
+      trackStatusText.textContent = 'Audio blocked — tap ▶ again to play';
+    });
   } else {
     audioPlayer.pause();
   }
@@ -376,6 +397,8 @@ function bindEventHandlers() {
   });
 
   audioPlayer.addEventListener('playing', () => {
+    if (!audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
+
     playIcon.textContent = '❚❚';
     visualizer.start();
 
@@ -399,6 +422,8 @@ function bindEventHandlers() {
   });
 
   audioPlayer.addEventListener('error', async () => {
+    if (!audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
+
     if (isWaitingForAudioStart && audioRetryCount < 3) {
       audioRetryCount += 1;
       const currentSession = roundSessionId;
