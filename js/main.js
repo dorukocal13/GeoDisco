@@ -124,9 +124,12 @@ async function initApp() {
     await mapManager.loadCountries();
     updateHud();
 
-    // 1. turun şarkısı hazır olmadan "Start Game" aktifleşmesin; böylece telefonda dokunur dokunmaz anında çalar
+    // 1. turun şarkısını açılışta hazırla (maksimum 6 sn bekle, yine de Start Game'i kilitleme)
     startGameBtn.textContent = 'Preparing First Track...';
-    await prepareNextRoundInBackground();
+    await Promise.race([
+      prepareNextRoundInBackground(),
+      new Promise((resolve) => setTimeout(resolve, 6000))
+    ]);
 
     isAppReady = true;
     startGameBtn.textContent = 'Start Game';
@@ -260,7 +263,7 @@ function beginPlayingTrack(trackData, activeSessionId) {
     if (isWaitingForAudioStart && activeSessionId === roundSessionId && !hasTimerStartedForRound) {
       promptManualTap(activeSessionId);
     }
-  }, 4500);
+  }, 4000);
 
   const playPromise = audioPlayer.play();
   if (playPromise !== undefined) {
@@ -291,7 +294,7 @@ async function startNewRound() {
   const cached = prefetchedRound;
   prefetchedRound = null;
 
-  // Ön yükleme tamamlandıysa dokunma anında senkron başlat (mobilde anında çalar)
+  // Ön yükleme tamamlandıysa dokunma anında senkron başlat
   if (cached && cached.resolvedTrack) {
     updateHud();
     beginPlayingTrack(cached.resolvedTrack, currentSession);
@@ -300,32 +303,28 @@ async function startNewRound() {
 
   // Ön yükleme henüz bitmediyse dokunma anında ses öğesini kilitsiz tut
   primeAudioElementOnGesture();
-  const targetCountry = cached ? cached.country : gameEngine.pickNextCountry();
+  let targetCountry = cached ? cached.country : gameEngine.pickNextCountry();
   updateHud();
   trackStatusText.textContent = 'Selecting a track from the global archive...';
 
-  try {
-    let trackData = cached ? await cached.promise : null;
-    if (!trackData) {
-      trackData = await getRandomTrackForCountry(targetCountry);
-    }
-    beginPlayingTrack(trackData, currentSession);
-  } catch (err) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     if (currentSession !== roundSessionId) return;
-    console.error('Track loading error:', err);
-    if (audioRetryCount < 2) {
-      audioRetryCount += 1;
-      try {
-        const fallbackCountry = gameEngine.pickNextCountry();
-        updateHud();
-        const retryTrack = await getRandomTrackForCountry(fallbackCountry);
-        beginPlayingTrack(retryTrack, currentSession);
-        return;
-      } catch {
-        // Fall through
+    try {
+      let trackData = attempt === 0 && cached ? await cached.promise : null;
+      if (!trackData) {
+        trackData = await getRandomTrackForCountry(targetCountry);
       }
+      beginPlayingTrack(trackData, currentSession);
+      return;
+    } catch (err) {
+      console.warn(`Attempt ${attempt + 1} failed for ${targetCountry.name}:`, err.message);
+      targetCountry = gameEngine.pickNextCountry();
+      updateHud();
     }
-    trackStatusText.textContent = 'Connection slow — tap ↻ at top-right to retry.';
+  }
+
+  if (currentSession === roundSessionId) {
+    trackStatusText.textContent = 'Network unavailable — check internet and tap ↻';
   }
 }
 

@@ -2,6 +2,7 @@ const MB_BASE_URL = 'https://musicbrainz.org/ws/2/artist';
 const ITUNES_BASE_URL = 'https://itunes.apple.com/search';
 
 const artistPoolCache = new Map();
+const itunesTrackCache = new Map();
 let lastMbRequestTime = 0;
 let musicBrainzUnavailable = false;
 
@@ -69,7 +70,16 @@ function shuffleArray(list) {
   return arr;
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
+function normalizeArtistKey(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ı/g, 'i')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -77,6 +87,48 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function fetchItunesViaJsonp(url, timeoutMs = 7000) {
+  return new Promise((resolve) => {
+    const callbackName = `geodisco_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    const script = document.createElement('script');
+    let settled = false;
+
+    const cleanup = () => {
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+    };
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    window[callbackName] = (data) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        resolve(data);
+      }
+    };
+
+    script.onerror = () => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        resolve(null);
+      }
+    };
+
+    script.src = `${url}&callback=${callbackName}`;
+    document.head.appendChild(script);
+  });
 }
 
 function hasConflictingNationality(disambiguation, expectedIso2) {
@@ -132,7 +184,7 @@ async function fetchMusicBrainzArtists(country) {
   const response = await fetchWithTimeout(
     url,
     { headers: { Accept: 'application/json' } },
-    4000
+    2200
   );
 
   if (!response.ok) {
@@ -148,7 +200,7 @@ async function fetchMusicBrainzArtists(country) {
     const retryRes = await fetchWithTimeout(
       `${MB_BASE_URL}?query=${query}&limit=100&offset=0&fmt=json`,
       { headers: { Accept: 'application/json' } },
-      4000
+      2200
     );
     if (retryRes.ok) {
       const retryData = await retryRes.json();
@@ -159,68 +211,78 @@ async function fetchMusicBrainzArtists(country) {
   return artists;
 }
 
-async function fetchItunesTrackForArtist(artistName) {
+async function fetchItunesTrackForArtist(artistName, allowLooseMatch = false) {
+  const cacheKey = `${artistName.toLowerCase()}_${allowLooseMatch}`;
+  if (itunesTrackCache.has(cacheKey)) {
+    const cachedList = itunesTrackCache.get(cacheKey);
+    if (!cachedList || cachedList.length === 0) return null;
+    return cachedList[Math.floor(Math.random() * cachedList.length)];
+  }
+
   const term = encodeURIComponent(artistName);
-  const url = `${ITUNES_BASE_URL}?term=${term}&country=US&media=music&entity=song&limit=15`;
+  const url = `${ITUNES_BASE_URL}?term=${term}&media=music&entity=song&limit=15`;
 
-  const res = await fetchWithTimeout(url, {}, 5000);
-  if (!res.ok) return null;
-
-  const data = await res.json();
-  const normalizedTarget = artistName.toLowerCase().trim();
-
-  const validTracks = (data.results || []).filter((item) => {
-    if (!item.previewUrl || !item.previewUrl.startsWith('https://') || !item.artistName) {
-      return false;
+  let data = null;
+  try {
+    const res = await fetchWithTimeout(url, {}, 7500);
+    if (res.ok) {
+      data = await res.json();
     }
-    const returnedArtist = item.artistName.toLowerCase().trim();
-    const collection = (item.collectionName || '').toLowerCase();
-    if (collection.includes('karaoke') || collection.includes('tribute')) return false;
+  } catch {
+    // Mobil tarayıcı fetch'i engellerse JSONP üzerinden dene
+  }
 
-    return returnedArtist === normalizedTarget;
-  });
+  if (!data) {
+    data = await fetchItunesViaJsonp(url, 7500);
+  }
+
+  if (!data || !Array.isArray(data.results)) {
+    return null;
+  }
+
+  const targetKey = normalizeArtistKey(artistName);
+
+  const validTracks = data.results
+    .filter((item) => {
+      if (!item.previewUrl || !item.previewUrl.startsWith('https://') || !item.artistName) {
+        return false;
+      }
+      const collection = (item.collectionName || '').toLowerCase();
+      const trackLower = (item.trackName || '').toLowerCase();
+      if (
+        collection.includes('karaoke') ||
+        collection.includes('tribute') ||
+        trackLower.includes('karaoke')
+      ) {
+        return false;
+      }
+
+      if (allowLooseMatch) return true;
+
+      const returnedKey = normalizeArtistKey(item.artistName);
+      if (!returnedKey || !targetKey) return false;
+
+      return (
+        returnedKey === targetKey ||
+        (targetKey.length >= 5 && returnedKey.includes(targetKey))
+      );
+    })
+    .map((picked) => ({
+      title: picked.trackName,
+      artist: picked.artistName,
+      genre: picked.primaryGenreName || 'World Music',
+      releaseYear: picked.releaseDate ? new Date(picked.releaseDate).getFullYear() : null,
+      previewUrl: picked.previewUrl
+    }));
 
   if (validTracks.length === 0) return null;
 
-  const picked = validTracks[Math.floor(Math.random() * validTracks.length)];
-  return {
-    title: picked.trackName,
-    artist: picked.artistName,
-    genre: picked.primaryGenreName || 'World Music',
-    releaseYear: picked.releaseDate ? new Date(picked.releaseDate).getFullYear() : null,
-    previewUrl: picked.previewUrl
-  };
-}
-
-function firstValidTrackFromArtists(artistNames) {
-  if (!artistNames || artistNames.length === 0) return Promise.resolve(null);
-
-  return new Promise((resolve) => {
-    let pending = artistNames.length;
-    let settled = false;
-
-    for (const name of artistNames) {
-      fetchItunesTrackForArtist(name)
-        .then((track) => {
-          if (track && !settled) {
-            settled = true;
-            resolve(track);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          pending -= 1;
-          if (pending === 0 && !settled) {
-            settled = true;
-            resolve(null);
-          }
-        });
-    }
-  });
+  itunesTrackCache.set(cacheKey, validTracks);
+  return validTracks[Math.floor(Math.random() * validTracks.length)];
 }
 
 export async function getRandomTrackForCountry(country) {
-  // 1. Katman: MusicBrainz etiketli yerel sanatçı havuzundan paralel ve hızlı parça çek
+  // 1. Katman: MusicBrainz yerel sanatçı havuzu (mobil ağda engellenirse anında 2. katmana geçer)
   if (!musicBrainzUnavailable) {
     try {
       let artists = artistPoolCache.get(country.iso2);
@@ -230,36 +292,40 @@ export async function getRandomTrackForCountry(country) {
         artistPoolCache.set(country.iso2, artists);
       }
 
-      const candidates = shuffleArray(artists).slice(0, 3);
-      const candidateNames = candidates.map((c) => c.name);
-      const mbTrack = await firstValidTrackFromArtists(candidateNames);
+      const candidates = shuffleArray(artists).slice(0, 2);
 
-      if (mbTrack) {
-        artistPoolCache.set(
-          country.iso2,
-          artists.filter((a) => a.name !== mbTrack.artist)
-        );
-        return { ...mbTrack, country };
+      for (const candidate of candidates) {
+        const track = await fetchItunesTrackForArtist(candidate.name, false);
+        if (track) {
+          artistPoolCache.set(
+            country.iso2,
+            artists.filter((a) => a.id !== candidate.id)
+          );
+          return { ...track, country };
+        }
       }
     } catch (err) {
       musicBrainzUnavailable = true;
-      console.warn('MusicBrainz unavailable on this connection, using fast local roster:', err.message);
+      console.warn('MusicBrainz skipped on mobile/restricted network:', err.message);
     }
   }
 
-  // 2. Katman: Ülkenin doğrulanmış yerel sanatçı listesinden paralel ve hızlı parça getir
+  // 2. Katman: Ülkenin doğrulanmış çok dönemli yerel sanatçı listesinden tekil sıralı sorgu (Apple rate-limit dostu)
   const nativeRoster = shuffleArray(COUNTRY_MULTI_ERA_ARTISTS[country.iso2] || []);
-  const firstBatch = nativeRoster.slice(0, 4);
-  const secondBatch = nativeRoster.slice(4);
 
-  const fastTrack = await firstValidTrackFromArtists(firstBatch);
-  if (fastTrack) {
-    return { ...fastTrack, country };
+  for (const artistName of nativeRoster) {
+    const track = await fetchItunesTrackForArtist(artistName, false);
+    if (track) {
+      return { ...track, country };
+    }
   }
 
-  const backupTrack = await firstValidTrackFromArtists(secondBatch);
-  if (backupTrack) {
-    return { ...backupTrack, country };
+  // 3. Katman: Yedek esnek arama (hiçbir turun boş dönmemesi için)
+  if (nativeRoster.length > 0) {
+    const looseTrack = await fetchItunesTrackForArtist(nativeRoster[0], true);
+    if (looseTrack) {
+      return { ...looseTrack, country };
+    }
   }
 
   throw new Error(`No verified native track found for ${country.name}`);
