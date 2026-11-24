@@ -10,9 +10,9 @@ let gameEngine = null;
 let mapManager = null;
 let visualizer = null;
 let isAppReady = false;
-let isAudioUnlocked = false;
 
 let timerInterval = null;
+let bufferingWatchdog = null;
 let remainingSeconds = 25;
 let hintStage = 0;
 let isRoundResolving = false;
@@ -22,7 +22,7 @@ let hasTimerStartedForRound = false;
 let audioRetryCount = 0;
 let roundSessionId = 0;
 
-// Bir sonraki turun şarkısını arka planda önceden hazırlamak için önbellek
+// Bir sonraki turun şarkısını önceden hazırlamak için önbellek
 let prefetchedRound = null;
 
 // DOM References
@@ -65,28 +65,27 @@ function isTouchDevice() {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 }
 
-function unlockMobileAudio() {
-  if (isAudioUnlocked) return;
+function primeAudioElementOnGesture() {
   try {
     audioPlayer.src = SILENT_AUDIO_URI;
-    const playPromise = audioPlayer.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          audioPlayer.pause();
-          isAudioUnlocked = true;
-        })
-        .catch(() => {
-          isAudioUnlocked = true;
-        });
+    const p = audioPlayer.play();
+    if (p !== undefined) {
+      p.then(() => audioPlayer.pause()).catch(() => {});
     }
   } catch {
-    // Ignore on restricted environments
+    // Ignore
+  }
+}
+
+function clearBufferingWatchdog() {
+  if (bufferingWatchdog) {
+    clearTimeout(bufferingWatchdog);
+    bufferingWatchdog = null;
   }
 }
 
 function prepareNextRoundInBackground() {
-  if (!gameEngine) return;
+  if (!gameEngine) return Promise.resolve(null);
   const sessionAtCreation = roundSessionId;
   const targetCountry = gameEngine.pickNextCountry();
 
@@ -107,6 +106,7 @@ function prepareNextRoundInBackground() {
     .catch(() => null);
 
   prefetchedRound = entry;
+  return entry.promise;
 }
 
 async function initApp() {
@@ -124,15 +124,16 @@ async function initApp() {
     await mapManager.loadCountries();
     updateHud();
 
-    // Karşılama ekranı açıkken 1. turun şarkısını önceden hazırla
-    prepareNextRoundInBackground();
+    // 1. turun şarkısı hazır olmadan "Start Game" aktifleşmesin; böylece telefonda dokunur dokunmaz anında çalar
+    startGameBtn.textContent = 'Preparing First Track...';
+    await prepareNextRoundInBackground();
 
     isAppReady = true;
     startGameBtn.textContent = 'Start Game';
   } catch (error) {
     console.error('Initialization error:', error);
     startGameBtn.textContent = 'Retry Loading';
-    trackStatusText.textContent = 'Failed to load map data. Check your connection and refresh.';
+    trackStatusText.textContent = 'Failed to load data. Check your connection and refresh.';
   }
 }
 
@@ -226,10 +227,20 @@ function checkProgressiveHints() {
 }
 
 function stopAudioPlayback() {
+  clearBufferingWatchdog();
   isAudioReadyForRound = false;
+  playPauseBtn.classList.remove('needs-tap');
   audioPlayer.pause();
   playIcon.textContent = '▶';
   visualizer.stop();
+}
+
+function promptManualTap(activeSessionId) {
+  if (!isWaitingForAudioStart || activeSessionId !== roundSessionId) return;
+  playPauseBtn.classList.add('needs-tap');
+  trackStatusText.textContent = isTouchDevice()
+    ? '▶ Tap the glowing Play button to start music'
+    : '▶ Click Play or press Space to listen';
 }
 
 function beginPlayingTrack(trackData, activeSessionId) {
@@ -241,16 +252,21 @@ function beginPlayingTrack(trackData, activeSessionId) {
   hasTimerStartedForRound = false;
   isRoundResolving = false;
 
+  trackStatusText.textContent = '⏳ Starting audio stream...';
   audioPlayer.src = trackData.previewUrl;
-  const playPromise = audioPlayer.play();
 
+  clearBufferingWatchdog();
+  bufferingWatchdog = setTimeout(() => {
+    if (isWaitingForAudioStart && activeSessionId === roundSessionId && !hasTimerStartedForRound) {
+      promptManualTap(activeSessionId);
+    }
+  }, 4500);
+
+  const playPromise = audioPlayer.play();
   if (playPromise !== undefined) {
     playPromise.catch(() => {
-      if (isWaitingForAudioStart && activeSessionId === roundSessionId) {
-        trackStatusText.textContent = isTouchDevice()
-          ? '▶ Tap Play button on bottom-left to listen'
-          : '▶ Click Play or press Space to listen';
-      }
+      clearBufferingWatchdog();
+      promptManualTap(activeSessionId);
     });
   }
 }
@@ -275,24 +291,24 @@ async function startNewRound() {
   const cached = prefetchedRound;
   prefetchedRound = null;
 
-  // Eğer bir sonraki tur önceden hazırlanmışsa dokunma anında senkron başlat (mobil autoplay için kritik)
+  // Ön yükleme tamamlandıysa dokunma anında senkron başlat (mobilde anında çalar)
   if (cached && cached.resolvedTrack) {
     updateHud();
     beginPlayingTrack(cached.resolvedTrack, currentSession);
     return;
   }
 
-  // Ön yükleme henüz devam ediyorsa veya taze tur başlatılıyorsa
-  unlockMobileAudio();
+  // Ön yükleme henüz bitmediyse dokunma anında ses öğesini kilitsiz tut
+  primeAudioElementOnGesture();
   const targetCountry = cached ? cached.country : gameEngine.pickNextCountry();
   updateHud();
   trackStatusText.textContent = 'Selecting a track from the global archive...';
 
   try {
-    const trackData = cached
-      ? (await cached.promise) || (await getRandomTrackForCountry(targetCountry))
-      : await getRandomTrackForCountry(targetCountry);
-
+    let trackData = cached ? await cached.promise : null;
+    if (!trackData) {
+      trackData = await getRandomTrackForCountry(targetCountry);
+    }
     beginPlayingTrack(trackData, currentSession);
   } catch (err) {
     if (currentSession !== roundSessionId) return;
@@ -300,20 +316,22 @@ async function startNewRound() {
     if (audioRetryCount < 2) {
       audioRetryCount += 1;
       try {
-        const retryTrack = await getRandomTrackForCountry(targetCountry);
+        const fallbackCountry = gameEngine.pickNextCountry();
+        updateHud();
+        const retryTrack = await getRandomTrackForCountry(fallbackCountry);
         beginPlayingTrack(retryTrack, currentSession);
         return;
       } catch {
         // Fall through
       }
     }
-    trackStatusText.textContent = 'Stream unavailable — tap ↻ to try another country.';
+    trackStatusText.textContent = 'Connection slow — tap ↻ at top-right to retry.';
   }
 }
 
 function restartFullGame() {
   if (!isAppReady) return;
-  unlockMobileAudio();
+  primeAudioElementOnGesture();
 
   prefetchedRound = null;
   startModal.classList.add('hidden');
@@ -384,7 +402,7 @@ function presentRoundFeedback(result) {
   hintPanel.classList.add('hidden');
   feedbackToast.classList.remove('hidden');
 
-  // Kullanıcı sonuç kartını okurken bir sonraki turun şarkısını arka planda hazırla
+  // Sonuç kartı okunurken bir sonraki turun şarkısını arka planda hazırla
   if (!result.isGameOver) {
     prepareNextRoundInBackground();
   }
@@ -418,7 +436,7 @@ function toggleAudioPlayback() {
 
   if (audioPlayer.paused) {
     audioPlayer.play().catch(() => {
-      trackStatusText.textContent = 'Tap ▶ again to play audio';
+      promptManualTap(roundSessionId);
     });
   } else {
     audioPlayer.pause();
@@ -454,6 +472,8 @@ function bindEventHandlers() {
   audioPlayer.addEventListener('playing', () => {
     if (!isAudioReadyForRound || !audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
 
+    clearBufferingWatchdog();
+    playPauseBtn.classList.remove('needs-tap');
     playIcon.textContent = '❚❚';
     visualizer.start();
 
@@ -480,6 +500,7 @@ function bindEventHandlers() {
   audioPlayer.addEventListener('error', async () => {
     if (!isAudioReadyForRound || !audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
 
+    clearBufferingWatchdog();
     if (isWaitingForAudioStart && audioRetryCount < 2) {
       audioRetryCount += 1;
       const currentSession = roundSessionId;

@@ -282,6 +282,17 @@ body {
   transform: scale(1.05);
 }
 
+.btn-control.needs-tap {
+  border-color: #fde047;
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.35);
+  animation: pulse-play 1.2s infinite;
+}
+
+@keyframes pulse-play {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
 .track-status {
   display: flex;
   flex-direction: column;

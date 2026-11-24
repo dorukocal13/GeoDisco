@@ -3,6 +3,7 @@ const ITUNES_BASE_URL = 'https://itunes.apple.com/search';
 
 const artistPoolCache = new Map();
 let lastMbRequestTime = 0;
+let musicBrainzUnavailable = false;
 
 // Her ülke için 1960'lardan günümüze farklı dönemleri kapsayan, tekrarsız doğrulanmış yerel sanatçı havuzu (2. Katman)
 const COUNTRY_MULTI_ERA_ARTISTS = {
@@ -68,7 +69,7 @@ function shuffleArray(list) {
   return arr;
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 2800) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -131,7 +132,7 @@ async function fetchMusicBrainzArtists(country) {
   const response = await fetchWithTimeout(
     url,
     { headers: { Accept: 'application/json' } },
-    2600
+    4000
   );
 
   if (!response.ok) {
@@ -147,7 +148,7 @@ async function fetchMusicBrainzArtists(country) {
     const retryRes = await fetchWithTimeout(
       `${MB_BASE_URL}?query=${query}&limit=100&offset=0&fmt=json`,
       { headers: { Accept: 'application/json' } },
-      2600
+      4000
     );
     if (retryRes.ok) {
       const retryData = await retryRes.json();
@@ -162,7 +163,7 @@ async function fetchItunesTrackForArtist(artistName) {
   const term = encodeURIComponent(artistName);
   const url = `${ITUNES_BASE_URL}?term=${term}&country=US&media=music&entity=song&limit=15`;
 
-  const res = await fetchWithTimeout(url, {}, 2800);
+  const res = await fetchWithTimeout(url, {}, 5000);
   if (!res.ok) return null;
 
   const data = await res.json();
@@ -219,29 +220,31 @@ function firstValidTrackFromArtists(artistNames) {
 }
 
 export async function getRandomTrackForCountry(country) {
-  // 1. Katman: MusicBrainz etiketli yerel sanatçı havuzundan hızlı rastgele parça çek
-  try {
-    let artists = artistPoolCache.get(country.iso2);
+  // 1. Katman: MusicBrainz etiketli yerel sanatçı havuzundan paralel ve hızlı parça çek
+  if (!musicBrainzUnavailable) {
+    try {
+      let artists = artistPoolCache.get(country.iso2);
 
-    if (!artists || artists.length === 0) {
-      artists = await fetchMusicBrainzArtists(country);
-      artistPoolCache.set(country.iso2, artists);
-    }
+      if (!artists || artists.length === 0) {
+        artists = await fetchMusicBrainzArtists(country);
+        artistPoolCache.set(country.iso2, artists);
+      }
 
-    const candidates = shuffleArray(artists).slice(0, 3);
+      const candidates = shuffleArray(artists).slice(0, 3);
+      const candidateNames = candidates.map((c) => c.name);
+      const mbTrack = await firstValidTrackFromArtists(candidateNames);
 
-    for (const candidate of candidates) {
-      const track = await fetchItunesTrackForArtist(candidate.name);
-      if (track) {
+      if (mbTrack) {
         artistPoolCache.set(
           country.iso2,
-          artists.filter((a) => a.id !== candidate.id)
+          artists.filter((a) => a.name !== mbTrack.artist)
         );
-        return { ...track, country };
+        return { ...mbTrack, country };
       }
+    } catch (err) {
+      musicBrainzUnavailable = true;
+      console.warn('MusicBrainz unavailable on this connection, using fast local roster:', err.message);
     }
-  } catch (err) {
-    console.warn('MusicBrainz layer skipped, switching to verified local roster:', err.message);
   }
 
   // 2. Katman: Ülkenin doğrulanmış yerel sanatçı listesinden paralel ve hızlı parça getir
