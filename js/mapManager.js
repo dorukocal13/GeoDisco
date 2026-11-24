@@ -25,6 +25,8 @@ export class MapManager {
       zoomDelta: 0.5,
       dragging: true,
       touchZoom: true,
+      tap: true,
+      tapTolerance: 15,
       doubleClickZoom: true,
       scrollWheelZoom: true,
       boxZoom: true,
@@ -83,8 +85,11 @@ export class MapManager {
     this.map.setMinZoom(0);
     this.map.setMaxBounds(null);
 
+    const isMobile = window.innerWidth <= 768;
+    const pad = isMobile ? [6, 6] : [18, 18];
+
     this.map.fitBounds(FULL_WORLD_BOUNDS, {
-      padding: [18, 18],
+      padding: pad,
       animate: false
     });
 
@@ -110,7 +115,7 @@ export class MapManager {
           break;
         }
       } catch {
-        // Sıradaki kaynağı dene
+        // Try next source
       }
     }
 
@@ -254,6 +259,8 @@ export class MapManager {
     layer.on({
       mouseover: (e) => {
         if (this.isLocked) return;
+        if (e.originalEvent && e.originalEvent.pointerType === 'touch') return;
+
         const target = e.target;
 
         if (this.hoveredLayer && this.hoveredLayer !== target) {

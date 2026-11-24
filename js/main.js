@@ -52,6 +52,18 @@ const DIFFICULTY_LABELS = {
   hard: { text: 'HARD', className: 'badge-hard' }
 };
 
+function isTouchDevice() {
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+}
+
+function unlockMobileAudio() {
+  try {
+    audioPlayer.load();
+  } catch {
+    // Ignore unlock errors on desktop
+  }
+}
+
 async function initApp() {
   bindEventHandlers();
 
@@ -192,7 +204,9 @@ async function loadAndPlayTrackForCountry(targetCountry, activeSessionId) {
     await audioPlayer.play();
   } catch {
     if (isWaitingForAudioStart && activeSessionId === roundSessionId) {
-      trackStatusText.textContent = '▶ Click Play or press Space to listen';
+      trackStatusText.textContent = isTouchDevice()
+        ? '▶ Tap Play to listen'
+        : '▶ Click Play or press Space to listen';
     }
   }
 }
@@ -231,6 +245,8 @@ async function startNewRound() {
 
 function restartFullGame() {
   if (!isAppReady) return;
+  unlockMobileAudio();
+
   startModal.classList.add('hidden');
   gameoverModal.classList.add('hidden');
   feedbackToast.classList.add('hidden');
@@ -298,6 +314,7 @@ function presentRoundFeedback(result) {
 
   trackStatusText.textContent = `${result.artist} - ${result.trackTitle}`;
   nextRoundBtn.textContent = result.isGameOver ? 'View Results 📊' : 'Next Round ➔';
+  hintPanel.classList.add('hidden');
   feedbackToast.classList.remove('hidden');
 
   nextRoundBtn.onclick = () => {
@@ -364,7 +381,9 @@ function bindEventHandlers() {
 
     if (isWaitingForAudioStart && !isRoundResolving) {
       isWaitingForAudioStart = false;
-      trackStatusText.textContent = '🎵 Playing — Find the country on the map!';
+      trackStatusText.textContent = isTouchDevice()
+        ? '🎵 Playing — Tap the country on the map!'
+        : '🎵 Playing — Find the country on the map!';
       startTimer();
     }
   });

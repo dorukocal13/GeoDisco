@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#081826" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>GeoDisco</title>
 
   <!-- Google Fonts -->
@@ -84,7 +88,7 @@
 
   <!-- Bottom Audio Control & D3.js Spectrum Dock -->
   <footer class="audio-dock">
-    <button id="play-pause-btn" class="btn-control" title="Play / Pause (Space)">
+    <button id="play-pause-btn" class="btn-control" title="Play / Pause (Space)" aria-label="Play or Pause">
       <span id="play-icon">▶</span>
     </button>
 
@@ -98,7 +102,7 @@
 
     <div class="copyright-badge">© 2026 Doruk ÖCAL</div>
 
-    <audio id="audio-player" preload="none"></audio>
+    <audio id="audio-player" preload="none" playsinline></audio>
   </footer>
 
   <!-- Start Modal -->
@@ -106,7 +110,7 @@
     <div class="modal-card">
       <h2>🪩 Welcome to GeoDisco</h2>
       <p id="modal-intro-text">
-        Listen to tracks from around the world across different eras and click their country of origin on the map within <strong>25 seconds</strong>.
+        Listen to tracks from around the world across different eras and tap their country of origin on the map within <strong>25 seconds</strong>.
       </p>
       <ul class="rules-list">
         <li>🎯 <strong>10 Rounds & 3 Lives:</strong> A global musical journey progressing from easy to hard.</li>
