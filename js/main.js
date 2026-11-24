@@ -17,8 +17,13 @@ let remainingSeconds = 25;
 let hintStage = 0;
 let isRoundResolving = false;
 let isWaitingForAudioStart = false;
+let isAudioReadyForRound = false;
+let hasTimerStartedForRound = false;
 let audioRetryCount = 0;
 let roundSessionId = 0;
+
+// Bir sonraki turun şarkısını arka planda önceden hazırlamak için önbellek
+let prefetchedRound = null;
 
 // DOM References
 const roundDisplay = document.getElementById('round-display');
@@ -72,13 +77,36 @@ function unlockMobileAudio() {
           isAudioUnlocked = true;
         })
         .catch(() => {
-          // Even an aborted play() inside a user tap unlocks the element on iOS/Android
           isAudioUnlocked = true;
         });
     }
   } catch {
     // Ignore on restricted environments
   }
+}
+
+function prepareNextRoundInBackground() {
+  if (!gameEngine) return;
+  const sessionAtCreation = roundSessionId;
+  const targetCountry = gameEngine.pickNextCountry();
+
+  const entry = {
+    session: sessionAtCreation,
+    country: targetCountry,
+    resolvedTrack: null,
+    promise: null
+  };
+
+  entry.promise = getRandomTrackForCountry(targetCountry)
+    .then((track) => {
+      if (entry.session === roundSessionId) {
+        entry.resolvedTrack = track;
+      }
+      return track;
+    })
+    .catch(() => null);
+
+  prefetchedRound = entry;
 }
 
 async function initApp() {
@@ -95,6 +123,9 @@ async function initApp() {
 
     await mapManager.loadCountries();
     updateHud();
+
+    // Karşılama ekranı açıkken 1. turun şarkısını önceden hazırla
+    prepareNextRoundInBackground();
 
     isAppReady = true;
     startGameBtn.textContent = 'Start Game';
@@ -195,34 +226,32 @@ function checkProgressiveHints() {
 }
 
 function stopAudioPlayback() {
+  isAudioReadyForRound = false;
   audioPlayer.pause();
   playIcon.textContent = '▶';
   visualizer.stop();
 }
 
-async function loadAndPlayTrackForCountry(targetCountry, activeSessionId) {
-  trackStatusText.textContent = 'Selecting a track from the global archive...';
-  resetTimerDisplay();
-
-  const trackData = await getRandomTrackForCountry(targetCountry);
+function beginPlayingTrack(trackData, activeSessionId) {
   if (activeSessionId !== roundSessionId) return;
 
   gameEngine.activateRound(trackData);
-
+  isAudioReadyForRound = true;
   isWaitingForAudioStart = true;
+  hasTimerStartedForRound = false;
   isRoundResolving = false;
 
   audioPlayer.src = trackData.previewUrl;
-  audioPlayer.load();
+  const playPromise = audioPlayer.play();
 
-  try {
-    await audioPlayer.play();
-  } catch {
-    if (isWaitingForAudioStart && activeSessionId === roundSessionId) {
-      trackStatusText.textContent = isTouchDevice()
-        ? '▶ Tap Play button on bottom-left to listen'
-        : '▶ Click Play or press Space to listen';
-    }
+  if (playPromise !== undefined) {
+    playPromise.catch(() => {
+      if (isWaitingForAudioStart && activeSessionId === roundSessionId) {
+        trackStatusText.textContent = isTouchDevice()
+          ? '▶ Tap Play button on bottom-left to listen'
+          : '▶ Click Play or press Space to listen';
+      }
+    });
   }
 }
 
@@ -232,29 +261,53 @@ async function startNewRound() {
 
   isRoundResolving = true;
   isWaitingForAudioStart = false;
+  hasTimerStartedForRound = false;
   audioRetryCount = 0;
 
   stopTimer();
   stopAudioPlayback();
+  resetTimerDisplay();
 
   feedbackToast.classList.add('hidden');
   hintPanel.classList.add('hidden');
   mapManager.resetRound();
 
-  const targetCountry = gameEngine.pickNextCountry();
+  const cached = prefetchedRound;
+  prefetchedRound = null;
+
+  // Eğer bir sonraki tur önceden hazırlanmışsa dokunma anında senkron başlat (mobil autoplay için kritik)
+  if (cached && cached.resolvedTrack) {
+    updateHud();
+    beginPlayingTrack(cached.resolvedTrack, currentSession);
+    return;
+  }
+
+  // Ön yükleme henüz devam ediyorsa veya taze tur başlatılıyorsa
+  unlockMobileAudio();
+  const targetCountry = cached ? cached.country : gameEngine.pickNextCountry();
   updateHud();
+  trackStatusText.textContent = 'Selecting a track from the global archive...';
 
   try {
-    await loadAndPlayTrackForCountry(targetCountry, currentSession);
+    const trackData = cached
+      ? (await cached.promise) || (await getRandomTrackForCountry(targetCountry))
+      : await getRandomTrackForCountry(targetCountry);
+
+    beginPlayingTrack(trackData, currentSession);
   } catch (err) {
     if (currentSession !== roundSessionId) return;
     console.error('Track loading error:', err);
     if (audioRetryCount < 2) {
       audioRetryCount += 1;
-      await loadAndPlayTrackForCountry(targetCountry, currentSession);
-    } else {
-      trackStatusText.textContent = 'Stream unavailable, try next round.';
+      try {
+        const retryTrack = await getRandomTrackForCountry(targetCountry);
+        beginPlayingTrack(retryTrack, currentSession);
+        return;
+      } catch {
+        // Fall through
+      }
     }
+    trackStatusText.textContent = 'Stream unavailable — tap ↻ to try another country.';
   }
 }
 
@@ -262,6 +315,7 @@ function restartFullGame() {
   if (!isAppReady) return;
   unlockMobileAudio();
 
+  prefetchedRound = null;
   startModal.classList.add('hidden');
   gameoverModal.classList.add('hidden');
   feedbackToast.classList.add('hidden');
@@ -330,8 +384,12 @@ function presentRoundFeedback(result) {
   hintPanel.classList.add('hidden');
   feedbackToast.classList.remove('hidden');
 
+  // Kullanıcı sonuç kartını okurken bir sonraki turun şarkısını arka planda hazırla
+  if (!result.isGameOver) {
+    prepareNextRoundInBackground();
+  }
+
   nextRoundBtn.onclick = () => {
-    unlockMobileAudio();
     if (result.isGameOver) {
       showGameOverScreen();
     } else {
@@ -356,15 +414,11 @@ function showGameOverScreen() {
 }
 
 function toggleAudioPlayback() {
-  if (!audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
+  if (!isAudioReadyForRound || !audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
 
   if (audioPlayer.paused) {
-    if (audioPlayer.error || audioPlayer.readyState === 0) {
-      audioPlayer.load();
-    }
-    audioPlayer.play().catch((err) => {
-      console.warn('Manual playback failed:', err);
-      trackStatusText.textContent = 'Audio blocked — tap ▶ again to play';
+    audioPlayer.play().catch(() => {
+      trackStatusText.textContent = 'Tap ▶ again to play audio';
     });
   } else {
     audioPlayer.pause();
@@ -377,7 +431,8 @@ function bindEventHandlers() {
       window.location.reload();
       return;
     }
-    restartFullGame();
+    startModal.classList.add('hidden');
+    startNewRound();
   });
 
   restartGameBtn.addEventListener('click', restartFullGame);
@@ -397,13 +452,14 @@ function bindEventHandlers() {
   });
 
   audioPlayer.addEventListener('playing', () => {
-    if (!audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
+    if (!isAudioReadyForRound || !audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
 
     playIcon.textContent = '❚❚';
     visualizer.start();
 
-    if (isWaitingForAudioStart && !isRoundResolving) {
+    if (isWaitingForAudioStart && !isRoundResolving && !hasTimerStartedForRound) {
       isWaitingForAudioStart = false;
+      hasTimerStartedForRound = true;
       trackStatusText.textContent = isTouchDevice()
         ? '🎵 Playing — Tap the country on the map!'
         : '🎵 Playing — Find the country on the map!';
@@ -422,15 +478,20 @@ function bindEventHandlers() {
   });
 
   audioPlayer.addEventListener('error', async () => {
-    if (!audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
+    if (!isAudioReadyForRound || !audioPlayer.src || audioPlayer.src.startsWith('data:')) return;
 
-    if (isWaitingForAudioStart && audioRetryCount < 3) {
+    if (isWaitingForAudioStart && audioRetryCount < 2) {
       audioRetryCount += 1;
       const currentSession = roundSessionId;
       const { activeCountry } = gameEngine.getState();
       if (activeCountry) {
         trackStatusText.textContent = 'Stream error, loading another track...';
-        await loadAndPlayTrackForCountry(activeCountry, currentSession);
+        try {
+          const fallbackTrack = await getRandomTrackForCountry(activeCountry);
+          beginPlayingTrack(fallbackTrack, currentSession);
+        } catch {
+          trackStatusText.textContent = 'Stream unavailable — tap ↻ to skip.';
+        }
       }
     }
   });

@@ -68,6 +68,16 @@ function shuffleArray(list) {
   return arr;
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 2800) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function hasConflictingNationality(disambiguation, expectedIso2) {
   if (!disambiguation) return false;
   const text = disambiguation.toLowerCase();
@@ -83,15 +93,9 @@ function hasConflictingNationality(disambiguation, expectedIso2) {
 
 function isVerifiedNativeArtist(artist, expectedIso2) {
   if (!artist || !artist.name || artist.name.length < 2) return false;
-
-  // 1. Ülke kodu birebir eşleşmeli
   if (artist.country !== expectedIso2) return false;
-
-  // 2. Sadece yüksek güvenilirlikli ve topluluk tarafından etiketlenmiş gerçek sanatçıları al
   if (typeof artist.score === 'number' && artist.score < 90) return false;
   if (!Array.isArray(artist.tags) || artist.tags.length === 0) return false;
-
-  // 3. Yabancı uyruk açıklaması varsa reddet
   if (hasConflictingNationality(artist.disambiguation, expectedIso2)) return false;
 
   const lowerName = artist.name.toLowerCase();
@@ -113,7 +117,6 @@ async function fetchMusicBrainzArtists(country) {
   }
   lastMbRequestTime = Date.now();
 
-  // Zorluk arttıkça daha geniş ve derin bir yerel sanatçı havuzundan (100 -> 300 -> 500) seçim yap
   const maxPage =
     country.difficulty === 'easy'
       ? 1
@@ -125,9 +128,11 @@ async function fetchMusicBrainzArtists(country) {
   const query = encodeURIComponent(`country:${country.iso2} AND tag:*`);
   const url = `${MB_BASE_URL}?query=${query}&limit=100&offset=${randomOffset}&fmt=json`;
 
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json' }
-  });
+  const response = await fetchWithTimeout(
+    url,
+    { headers: { Accept: 'application/json' } },
+    2600
+  );
 
   if (!response.ok) {
     throw new Error(`MusicBrainz HTTP ${response.status}`);
@@ -136,13 +141,18 @@ async function fetchMusicBrainzArtists(country) {
   const data = await response.json();
   let artists = (data.artists || []).filter((a) => isVerifiedNativeArtist(a, country.iso2));
 
-  // Küçük ülkelerde derin sayfa (offset > 0) boş dönerse ilk 100 sanatçıya düş
   if (artists.length === 0 && randomOffset > 0) {
     await new Promise((resolve) => setTimeout(resolve, 1100));
     lastMbRequestTime = Date.now();
-    const retryRes = await fetch(`${MB_BASE_URL}?query=${query}&limit=100&offset=0&fmt=json`);
-    const retryData = await retryRes.json();
-    artists = (retryData.artists || []).filter((a) => isVerifiedNativeArtist(a, country.iso2));
+    const retryRes = await fetchWithTimeout(
+      `${MB_BASE_URL}?query=${query}&limit=100&offset=0&fmt=json`,
+      { headers: { Accept: 'application/json' } },
+      2600
+    );
+    if (retryRes.ok) {
+      const retryData = await retryRes.json();
+      artists = (retryData.artists || []).filter((a) => isVerifiedNativeArtist(a, country.iso2));
+    }
   }
 
   return artists;
@@ -152,7 +162,7 @@ async function fetchItunesTrackForArtist(artistName) {
   const term = encodeURIComponent(artistName);
   const url = `${ITUNES_BASE_URL}?term=${term}&country=US&media=music&entity=song&limit=15`;
 
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, 2800);
   if (!res.ok) return null;
 
   const data = await res.json();
@@ -181,8 +191,35 @@ async function fetchItunesTrackForArtist(artistName) {
   };
 }
 
+function firstValidTrackFromArtists(artistNames) {
+  if (!artistNames || artistNames.length === 0) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    let pending = artistNames.length;
+    let settled = false;
+
+    for (const name of artistNames) {
+      fetchItunesTrackForArtist(name)
+        .then((track) => {
+          if (track && !settled) {
+            settled = true;
+            resolve(track);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          pending -= 1;
+          if (pending === 0 && !settled) {
+            settled = true;
+            resolve(null);
+          }
+        });
+    }
+  });
+}
+
 export async function getRandomTrackForCountry(country) {
-  // 1. Katman: MusicBrainz etiketli yerel sanatçı havuzundan rastgele parça çek
+  // 1. Katman: MusicBrainz etiketli yerel sanatçı havuzundan hızlı rastgele parça çek
   try {
     let artists = artistPoolCache.get(country.iso2);
 
@@ -191,7 +228,7 @@ export async function getRandomTrackForCountry(country) {
       artistPoolCache.set(country.iso2, artists);
     }
 
-    const candidates = shuffleArray(artists).slice(0, 4);
+    const candidates = shuffleArray(artists).slice(0, 3);
 
     for (const candidate of candidates) {
       const track = await fetchItunesTrackForArtist(candidate.name);
@@ -207,13 +244,19 @@ export async function getRandomTrackForCountry(country) {
     console.warn('MusicBrainz layer skipped, switching to verified local roster:', err.message);
   }
 
-  // 2. Katman: Ülkenin çok dönemli doğrulanmış yerel sanatçı listesinden rastgele parça getir
+  // 2. Katman: Ülkenin doğrulanmış yerel sanatçı listesinden paralel ve hızlı parça getir
   const nativeRoster = shuffleArray(COUNTRY_MULTI_ERA_ARTISTS[country.iso2] || []);
-  for (const artistName of nativeRoster) {
-    const track = await fetchItunesTrackForArtist(artistName);
-    if (track) {
-      return { ...track, country };
-    }
+  const firstBatch = nativeRoster.slice(0, 4);
+  const secondBatch = nativeRoster.slice(4);
+
+  const fastTrack = await firstValidTrackFromArtists(firstBatch);
+  if (fastTrack) {
+    return { ...fastTrack, country };
+  }
+
+  const backupTrack = await firstValidTrackFromArtists(secondBatch);
+  if (backupTrack) {
+    return { ...backupTrack, country };
   }
 
   throw new Error(`No verified native track found for ${country.name}`);
