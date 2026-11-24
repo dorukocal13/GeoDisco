@@ -1,10 +1,13 @@
 const MB_BASE_URL = 'https://musicbrainz.org/ws/2/artist';
 const ITUNES_BASE_URL = 'https://itunes.apple.com/search';
+const DEEZER_BASE_URL = 'https://api.deezer.com/search';
 
 const artistPoolCache = new Map();
-const itunesTrackCache = new Map();
+const trackPoolCache = new Map();
+
 let lastMbRequestTime = 0;
 let musicBrainzUnavailable = false;
+let itunesRateLimitedUntil = 0;
 
 // Her ülke için 1960'lardan günümüze farklı dönemleri kapsayan, tekrarsız doğrulanmış yerel sanatçı havuzu (2. Katman)
 const COUNTRY_MULTI_ERA_ARTISTS = {
@@ -79,7 +82,19 @@ function normalizeArtistKey(str) {
     .replace(/[^a-z0-9]/g, '');
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
+function isArtistMatch(returnedName, targetName, allowLooseMatch) {
+  if (allowLooseMatch) return true;
+  const returnedKey = normalizeArtistKey(returnedName);
+  const targetKey = normalizeArtistKey(targetName);
+  if (!returnedKey || !targetKey) return false;
+
+  return (
+    returnedKey === targetKey ||
+    (targetKey.length >= 5 && returnedKey.includes(targetKey))
+  );
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -89,7 +104,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
   }
 }
 
-function fetchItunesViaJsonp(url, timeoutMs = 7000) {
+function fetchViaJsonp(baseUrlWithParams, timeoutMs = 5000) {
   return new Promise((resolve) => {
     const callbackName = `geodisco_cb_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
     const script = document.createElement('script');
@@ -126,7 +141,8 @@ function fetchItunesViaJsonp(url, timeoutMs = 7000) {
       }
     };
 
-    script.src = `${url}&callback=${callbackName}`;
+    const separator = baseUrlWithParams.includes('?') ? '&' : '?';
+    script.src = `${baseUrlWithParams}${separator}callback=${callbackName}`;
     document.head.appendChild(script);
   });
 }
@@ -212,35 +228,37 @@ async function fetchMusicBrainzArtists(country) {
 }
 
 async function fetchItunesTrackForArtist(artistName, allowLooseMatch = false) {
-  const cacheKey = `${artistName.toLowerCase()}_${allowLooseMatch}`;
-  if (itunesTrackCache.has(cacheKey)) {
-    const cachedList = itunesTrackCache.get(cacheKey);
-    if (!cachedList || cachedList.length === 0) return null;
-    return cachedList[Math.floor(Math.random() * cachedList.length)];
+  if (Date.now() < itunesRateLimitedUntil) {
+    return null;
   }
 
   const term = encodeURIComponent(artistName);
-  const url = `${ITUNES_BASE_URL}?term=${term}&media=music&entity=song&limit=15`;
+  const url = `${ITUNES_BASE_URL}?term=${term}&media=music&entity=song&limit=12`;
 
   let data = null;
   try {
-    const res = await fetchWithTimeout(url, {}, 7500);
+    const res = await fetchWithTimeout(url, {}, 4000);
+    if (res.status === 403 || res.status === 429) {
+      // Mobil operatör IP'si Apple rate-limit sınırına takıldıysa 60 sn boyunca Deezer'a yönlendir
+      itunesRateLimitedUntil = Date.now() + 60000;
+      return null;
+    }
     if (res.ok) {
       data = await res.json();
     }
   } catch {
-    // Mobil tarayıcı fetch'i engellerse JSONP üzerinden dene
+    // Fetch başarısız olursa JSONP dene
   }
 
   if (!data) {
-    data = await fetchItunesViaJsonp(url, 7500);
+    data = await fetchViaJsonp(url, 4000);
+    if (!data) {
+      itunesRateLimitedUntil = Date.now() + 45000;
+      return null;
+    }
   }
 
-  if (!data || !Array.isArray(data.results)) {
-    return null;
-  }
-
-  const targetKey = normalizeArtistKey(artistName);
+  if (!Array.isArray(data.results)) return null;
 
   const validTracks = data.results
     .filter((item) => {
@@ -256,16 +274,7 @@ async function fetchItunesTrackForArtist(artistName, allowLooseMatch = false) {
       ) {
         return false;
       }
-
-      if (allowLooseMatch) return true;
-
-      const returnedKey = normalizeArtistKey(item.artistName);
-      if (!returnedKey || !targetKey) return false;
-
-      return (
-        returnedKey === targetKey ||
-        (targetKey.length >= 5 && returnedKey.includes(targetKey))
-      );
+      return isArtistMatch(item.artistName, artistName, allowLooseMatch);
     })
     .map((picked) => ({
       title: picked.trackName,
@@ -276,13 +285,67 @@ async function fetchItunesTrackForArtist(artistName, allowLooseMatch = false) {
     }));
 
   if (validTracks.length === 0) return null;
+  return validTracks;
+}
 
-  itunesTrackCache.set(cacheKey, validTracks);
-  return validTracks[Math.floor(Math.random() * validTracks.length)];
+async function fetchDeezerTrackForArtist(artistName, allowLooseMatch = false) {
+  const query = encodeURIComponent(artistName);
+  const url = `${DEEZER_BASE_URL}?q=${query}&limit=12&output=jsonp`;
+
+  const data = await fetchViaJsonp(url, 5000);
+  if (!data || !Array.isArray(data.data)) return null;
+
+  const validTracks = data.data
+    .filter((item) => {
+      if (!item.preview || !item.preview.startsWith('https://') || !item.artist?.name) {
+        return false;
+      }
+      const albumTitle = (item.album?.title || '').toLowerCase();
+      const trackLower = (item.title || '').toLowerCase();
+      if (
+        albumTitle.includes('karaoke') ||
+        albumTitle.includes('tribute') ||
+        trackLower.includes('karaoke')
+      ) {
+        return false;
+      }
+      return isArtistMatch(item.artist.name, artistName, allowLooseMatch);
+    })
+    .map((picked) => ({
+      title: picked.title_short || picked.title,
+      artist: picked.artist.name,
+      genre: 'World Music',
+      releaseYear: null,
+      previewUrl: picked.preview
+    }));
+
+  if (validTracks.length === 0) return null;
+  return validTracks;
+}
+
+async function resolveTrackForArtist(artistName, allowLooseMatch = false) {
+  const cacheKey = `${artistName.toLowerCase()}_${allowLooseMatch}`;
+  if (trackPoolCache.has(cacheKey)) {
+    const cachedList = trackPoolCache.get(cacheKey);
+    if (cachedList && cachedList.length > 0) {
+      return cachedList[Math.floor(Math.random() * cachedList.length)];
+    }
+  }
+
+  // Önce iTunes dene (rate-limit yoksa); başarısız olursa anında Deezer JSONP'ye geç
+  let tracks = await fetchItunesTrackForArtist(artistName, allowLooseMatch);
+  if (!tracks || tracks.length === 0) {
+    tracks = await fetchDeezerTrackForArtist(artistName, allowLooseMatch);
+  }
+
+  if (!tracks || tracks.length === 0) return null;
+
+  trackPoolCache.set(cacheKey, tracks);
+  return tracks[Math.floor(Math.random() * tracks.length)];
 }
 
 export async function getRandomTrackForCountry(country) {
-  // 1. Katman: MusicBrainz yerel sanatçı havuzu (mobil ağda engellenirse anında 2. katmana geçer)
+  // 1. Katman: MusicBrainz yerel sanatçı havuzu
   if (!musicBrainzUnavailable) {
     try {
       let artists = artistPoolCache.get(country.iso2);
@@ -295,7 +358,7 @@ export async function getRandomTrackForCountry(country) {
       const candidates = shuffleArray(artists).slice(0, 2);
 
       for (const candidate of candidates) {
-        const track = await fetchItunesTrackForArtist(candidate.name, false);
+        const track = await resolveTrackForArtist(candidate.name, false);
         if (track) {
           artistPoolCache.set(
             country.iso2,
@@ -310,19 +373,19 @@ export async function getRandomTrackForCountry(country) {
     }
   }
 
-  // 2. Katman: Ülkenin doğrulanmış çok dönemli yerel sanatçı listesinden tekil sıralı sorgu (Apple rate-limit dostu)
+  // 2. Katman: Ülkenin doğrulanmış yerel sanatçı listesinden iTunes + Deezer çift kaynaklı arama
   const nativeRoster = shuffleArray(COUNTRY_MULTI_ERA_ARTISTS[country.iso2] || []);
 
-  for (const artistName of nativeRoster) {
-    const track = await fetchItunesTrackForArtist(artistName, false);
+  for (const artistName of nativeRoster.slice(0, 4)) {
+    const track = await resolveTrackForArtist(artistName, false);
     if (track) {
       return { ...track, country };
     }
   }
 
-  // 3. Katman: Yedek esnek arama (hiçbir turun boş dönmemesi için)
+  // 3. Katman: Esnek yedek arama
   if (nativeRoster.length > 0) {
-    const looseTrack = await fetchItunesTrackForArtist(nativeRoster[0], true);
+    const looseTrack = await resolveTrackForArtist(nativeRoster[0], true);
     if (looseTrack) {
       return { ...looseTrack, country };
     }
